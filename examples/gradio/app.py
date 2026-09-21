@@ -173,13 +173,12 @@ def build_app():
                     metrics = gr.HTML("")
                     threshold = gr.Slider(0, 1, value=.5, step=.05, label="保留阈值", info="越高通常删得越多。首次压缩后，调整立即生效，不会再次调用 API。")
                 with gr.Column(variant="panel", elem_classes="workspace-section"):
-                    with gr.Row():
-                        gr.Markdown("### 03　内容对比", scale=3)
-                        next_step = gr.Button("下一步：验证关键信息 →", scale=1, min_width=230)
+                    gr.Markdown("### 03　内容对比")
                     gr.Markdown("同一编号对应同一条原始记录。绿色保留、黄色部分删减、红色删除；展开工具记录可查看评分与输出。", elem_classes="quiet-note")
                     comparison = gr.HTML(comparison_html(SAMPLES[0]["messages"]))
                     with gr.Accordion("如何理解评分？", open=False):
                         gr.Markdown("Jev 为每次工具调用给出两项保留分数：调用本身、输出内容。分数达到阈值时保留；受保护的记录直接保留，不进行评分。分数不是正确率，界面不会生成 Jev 未提供的理由。原库评分时只能看到工具输出的状态和长度，这一限制可在困难样例中验证。")
+                    next_step = gr.Button("下一步：验证关键信息 →")
 
             with gr.Tab("② 关键信息验证", id="verification"):
                 gr.Markdown("## 从‘文字还在’到‘真的答对’\n本页使用第一页**当前有效的实验结果**。修改输入或参数会清除旧结论。")
