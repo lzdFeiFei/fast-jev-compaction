@@ -52,7 +52,7 @@ def input_preview(raw):
         matched = next((s for s in SAMPLES if s['messages'] == case['messages']), None)
         description = matched['description'] if matched else '当前导入或编辑的对话；以下内容将用于本次压缩。'
         count = sum(len(m['toolUses']) for m in case['messages'])
-        heading = (f'<div class="input-summary"><b>{esc(case["name"])}</b><p>{esc(description)}</p>'
+        heading = (f'<div class="input-summary"><p>{esc(description)}</p>'
                    f'<small>{len(case["messages"])} 条消息 · {count} 次工具调用 · {len(case["checks"])} 个验证问题</small></div>')
         rows = []
         for i, m in enumerate(case['messages']):
