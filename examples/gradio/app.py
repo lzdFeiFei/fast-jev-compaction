@@ -5,29 +5,29 @@ import json
 from pathlib import Path
 
 import gradio as gr
+from presentation import comparison_html, render_result
 
 from samples import SAMPLES, get_sample
 from lab import (ROOT, LabError, bridge, parse_input, score_input, adjust, require_current,
-                 render, transcript_html, verification, answer_comparison,
+                 verification, answer_comparison,
                  batch_evaluate, export_report, EMPTY)
 
 
 CSS = """
-.gradio-container {max-width:1440px!important;margin:auto!important;font-family:'Segoe UI','Microsoft YaHei',sans-serif!important}
-.hero {background:linear-gradient(115deg,#142c2c,#245746);border-radius:18px;padding:32px;color:#f5fff9;margin:8px 0 18px}
-.hero small {color:#bdecc6;letter-spacing:3px;font-size:12px}.hero h1 {font-size:32px!important;color:white!important;margin:10px 0!important;font-weight:650}
-.hero p {color:#d7e9df;line-height:1.8;margin:0}.metrics {display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin:8px 0}
-.metrics>div {background:#edf6f0;border:1px solid #cde0d4;padding:18px;border-radius:12px;color:#153a2c}.metrics small{display:block;color:#466657;font-size:12px}.metrics strong{display:block;font-size:24px;margin-top:6px}
-.transcript {height:520px;overflow:auto;background:#f7faf8;padding:12px;border:1px solid #dbe5de;border-radius:12px;color:#19382b}
-.message {background:white;border:1px solid #e0e8e2;padding:14px;margin-bottom:10px;border-radius:9px}.message small{color:#59796a;font-size:11px}.prose{white-space:pre-wrap;overflow-wrap:anywhere;margin:8px 0;line-height:1.8;font-size:14px}
-.tool{margin-top:10px;border-left:4px solid #2c8061;padding:10px;background:#eef7f1;border-radius:5px;font-size:13px}.drop_call{border-color:#c44c4c;background:#fff0ef;color:#833131}.drop_result{border-color:#bf8a23;background:#fff8e5;color:#6c501e}
-.tool pre {white-space:pre-wrap;overflow-wrap:anywhere;max-height:300px;overflow:auto;font-size:12px;color:inherit}.tool summary{cursor:pointer;font-weight:600}.empty{padding:55px 24px;text-align:center;border:1px dashed #a9bfb0;border-radius:12px;color:#5e7668;background:#f4f8f5;min-height:170px}
-.score-chart{color:#244637;background:#f6faf7;padding:20px;border-radius:12px}.score-row{padding:12px 0;border-bottom:1px solid #dde8df}.bar-row{display:flex;align-items:center;gap:12px;font-size:12px;margin-top:8px}.track{flex:1;background:#deebe2;height:9px;border-radius:10px}.track i{display:block;background:#348161;height:9px;border-radius:10px}.score-row b{font-size:13px}
-@media(max-width:700px){.metrics{grid-template-columns:repeat(2,1fr)}.hero{padding:22px}.hero h1{font-size:25px!important}.metrics strong{font-size:19px}}
+.gradio-container {max-width:1280px!important;margin:auto!important;font-family:'Segoe UI','Microsoft YaHei',sans-serif!important}
+.app-heading {align-items:center!important;padding:8px 0 14px}.app-heading h1{font-size:26px!important}.app-heading p{margin:4px 0!important}.app-heading button{max-width:150px;align-self:flex-end}
+.workspace-section{padding:18px!important;border:1px solid #dce6df!important;border-radius:12px!important;background:white!important;margin:12px 0!important;gap:12px!important}
+.workspace-section .workspace-section{padding:0!important;border:0!important;margin:0!important}.workspace-section button.primary{align-self:flex-end!important;min-height:44px!important}.workspace-section h3{font-size:18px!important;color:#1b4938!important;margin:0!important}.quiet-note p{font-size:12px!important;color:#576c60!important;line-height:1.6!important;margin:0!important}
+.result-summary{display:flex;align-items:center;gap:32px;background:#edf7f0;color:#163c2b;padding:22px;border-radius:10px}.result-summary strong{display:block;font-size:40px;line-height:1.2;margin-top:6px}.result-summary small{color:#536d5d}.result-summary p{margin:8px 0;font-size:14px}.run-details{font-size:12px;color:#526759;margin-top:12px}.run-details summary{cursor:pointer}.run-details p{margin:8px 0}
+.comparison{max-height:680px;overflow:auto;border:1px solid #dce6df;border-radius:10px;background:#f7faf8;color:#223d2e}.compare-head{position:sticky;top:0;z-index:1;display:grid;grid-template-columns:1fr 1fr;background:#edf3ef;border-bottom:1px solid #ccd9d0;padding:12px 16px;font-size:14px}
+.compare-row{margin:12px;border:1px solid #dce6df;border-radius:8px;overflow:hidden;background:white}.record-label{display:flex;justify-content:space-between;align-items:center;padding:8px 12px;font-size:12px;background:#f0f5f1}.badge{font-size:11px;border-radius:4px;padding:2px 7px;background:#e2f1e6;color:#275b3d}.deleted .badge{background:#fbe4e2;color:#943b36}.trimmed .badge{background:#fff0c9;color:#76560d}.pending .badge{background:#e9edf0;color:#55616a}
+.pair{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr)}.pair article{padding:12px;min-width:0}.pair article+article{border-left:1px solid #e0e8e2}.pair pre{white-space:pre-wrap;overflow-wrap:anywhere;font-size:12px;line-height:1.6;margin:8px 0;max-height:240px;overflow:auto}.pair .prose{white-space:pre-wrap;overflow-wrap:anywhere;line-height:1.7;font-size:14px;margin:0}.tool-title{font-weight:600;font-size:13px}.tool-title small{font-weight:400;color:#627469;margin-left:8px}.side-name{display:none}.muted,.removed{font-size:13px;color:#65766a;padding:8px 0}.removed{color:#8c4a43}.deleted .pair article:last-child{background:#fff7f6}.trimmed .pair article:last-child{background:#fffaf0}
+.inline-score,.output{font-size:12px;margin-top:10px}.inline-score summary,.output summary{cursor:pointer;color:#286649;font-weight:500;padding:4px 0}.inline-score p{font-size:12px}.bar-row{display:flex;align-items:center;gap:8px;font-size:12px;margin-top:8px}.bar-row meter{flex:1;min-width:30px;height:12px;accent-color:#277a53}.bar-row b{font-variant-numeric:tabular-nums;font-weight:400}.empty{padding:28px;color:#64776b;background:#f5f8f6;border-radius:8px;text-align:center}
+@media(max-width:700px){.result-summary{gap:16px;padding:16px}.result-summary strong{font-size:30px}.workspace-section{padding:12px!important}.pair{grid-template-columns:1fr}.pair article+article{border-left:0;border-top:1px dashed #dce6df}.side-name{display:block;font-size:11px;color:#667d6c;margin-bottom:8px}.compare-head{display:none}.comparison{max-height:620px}}
 """
 
+
 INITIAL = json.dumps(SAMPLES[0], ensure_ascii=False, indent=2)
-SCORE_HEADERS = ["编号", "工具", "调用保留分数", "结果保留分数", "处理方式", "原始调用 ID"]
 VERIFY_HEADERS = ["验证问题", "标准答案", "对应证据", "原始对话", "压缩后"]
 QA_HEADERS = ["问题", "标准答案", "原始上下文回答", "要点匹配", "压缩上下文回答", "要点匹配"]
 BATCH_HEADERS = ["样例", "策略", "证据保留", "字符减少", "压缩耗时 ms", "Jev 请求数", "问答要点匹配", "回答耗时 ms", "缺失 / 失败详情"]
@@ -37,7 +37,7 @@ def configuration():
     try:
         config = bridge("config")
         return (f"**Jev：{'已配置' if config['jev'] else '未配置'}**　｜　"
-                f"**回答模型：{'已配置' if config['answer'] else '尚未配置'}**　｜　仅本机访问 · 所有评分均为真实 API")
+                f"**回答模型：{'已配置' if config['answer'] else '尚未配置'}**")
     except LabError as error:
         return str(error)
 
@@ -64,30 +64,30 @@ def import_file(path):
 def invalidate(raw, recent, goal):
     try:
         case = parse_input(raw)
-        preview = transcript_html(case["messages"])
+        preview = comparison_html(case["messages"])
         text = f"已载入「{case['name']}」，{len(case['messages'])} 条消息、{len(case['checks'])} 个验证问题。输入或评分设置已变更，需要重新评分。"
     except LabError as error:
         preview = EMPTY
         text = f"输入无效：{error}"
-    return None, text, "", preview, EMPTY, "", [], [], "验证结果已清空；请先重新评分。", [], "问答结果已清空。"
+    return None, text, "", preview, [], "验证结果已清空；请先重新评分。", [], "问答结果已清空。"
 
 
 def scoring(raw, threshold, recent, head, goal):
     try:
         state = score_input(raw, threshold, recent, head, goal)
-        status = "真实评分完成。绿色＝保留，黄色＝截断策略，红色＝删除。左侧始终可展开被删除的原始输出。"
-        return state, status, *render(state), [], "点击「检查证据保留」进行本地验证。", [], "尚未运行回答模型。"
+        status = "压缩完成。可调整下方阈值，立即查看删减变化，无需再次调用 API。"
+        return state, status, *render_result(state), [], "点击「检查证据保留」进行本地验证。", [], "尚未运行回答模型。"
     except LabError as error:
         # Clear previous results so a failed new run can never masquerade as success.
-        return None, f"评分失败：{error}", "", EMPTY, EMPTY, "", [], [], "评分未完成。", [], "尚未运行回答模型。"
+        return None, f"评分失败：{error}", "", EMPTY, [], "评分未完成。", [], "尚未运行回答模型。"
 
 
 def local_adjust(state, raw, threshold, recent, head, goal):
     try:
         updated = adjust(state, raw, threshold, recent, head, goal)
-        return updated, "已复用同一份真实评分，本次调整未调用 API。旧验证结论已清空，请重新验证。", *render(updated), [], "参数已调整，请重新检查证据。", [], "参数已调整，请重新运行问答。"
+        return updated, "已复用同一份评分，未调用 API；验证结论已清空。", *render_result(updated), [], "参数已调整，请重新检查证据。", [], "参数已调整，请重新运行问答。"
     except LabError as error:
-        return None, str(error), "", EMPTY, EMPTY, "", [], [], "请先评分。", [], "请先评分。"
+        return invalidate(raw, recent, goal)
 
 
 def verify(state, raw, threshold, recent, head, goal):
@@ -125,49 +125,47 @@ def batch(threshold, recent, head, with_answers, progress=gr.Progress()):
 
 def build_app():
     with gr.Blocks(title="Jev 中文实验台", analytics_enabled=False, delete_cache=(3600, 86400)) as app:
-        gr.HTML('<div class="hero"><small>JEV CONTEXT LAB</small><h1>上下文变短，重要信息还在吗？</h1><p>先观察删减，再检查证据，最后比较回答。用可核对的实验，理解 Agent 的上下文压缩。</p></div>')
-        config_status = gr.Markdown(configuration())
-        refresh = gr.Button("刷新配置状态", size="sm")
+        with gr.Row(elem_classes="app-heading"):
+            gr.Markdown("# Jev 上下文实验台\n压缩对话，再验证重要信息是否还在。", scale=3)
+            with gr.Column(scale=2, min_width=260):
+                config_status = gr.Markdown(configuration())
+                refresh = gr.Button("刷新连接状态", size="sm")
         refresh.click(configuration, outputs=config_status)
         state = gr.State(None)
-        with gr.Tabs():
-            with gr.Tab("① 上下文压缩实验"):
-                gr.Markdown("**操作顺序：** 选择样例或导入 → 真实 Jev 评分 → 调整阈值观察变化 → 到第二页验证信息。\n\n内置对话是手工编写的教学数据，**评分是真实 API 结果**，没有预置模拟分数。")
-                sample = gr.Dropdown([s["name"] for s in SAMPLES], value=SAMPLES[0]["name"], label="选择教学场景")
-                with gr.Accordion("查看 / 编辑对话 JSON，或导入自己的记录", open=False):
-                    raw = gr.Code(value=INITIAL, language="json", label="对话 JSON（编辑会使评分失效）", lines=12)
-                    upload = gr.File(label="导入 UTF-8 JSON（最大 2 MB）", file_types=[".json"], type="filepath")
-                    gr.Markdown('可导入消息数组，或 `{ "name": "我的实验", "messages": [...], "checks": [...] }`。每条消息需要 `role`、`text`、`toolUses`；工具调用和结果通过唯一 `tool_use_id` 配对。上方内置样例就是完整格式示例。没有 `checks` 时只做压缩，不虚构验证成绩。')
-                    with gr.Accordion("最小导入格式与验证题说明", open=False):
-                        gr.Code(value=json.dumps({"name": "格式示例", "messages": [
-                            {"role": "user", "text": "禁止修改 legacy/。", "toolUses": []},
-                            {"role": "assistant", "text": "", "toolUses": [{"tool_use_id": "c1", "tool": "Read", "input": {"file_path": "log.txt"}}]},
-                            {"role": "user", "text": "", "toolUses": [], "toolResults": [{"tool_use_id": "c1", "text": "错误 E42 尚未解决。"}]}
-                        ], "checks": [{"question": "未解决的错误？", "answer": "E42", "evidence": {"field": "toolResults", "tool_id": "c1", "quote": "错误 E42 尚未解决。"}, "answer_groups": [["E42"]]}]}, ensure_ascii=False, indent=2), language="json", interactive=False, lines=12)
-                        gr.Markdown("证据检查使用原文精确包含。正文证据使用 `field: text`，工具结果使用 `field: toolResults` 和 `tool_id`。`answer_groups` 每组为一个必需答案要点，组内任一别名匹配即可；它仅用于问答的透明关键词核对。")
-                with gr.Row():
-                    threshold = gr.Slider(0, 1, value=.5, step=.05, label="保留阈值 · 本地即时重算", info="越高通常删除越多；调用或结果分数达到阈值时才保留。不是正确率。")
-                    recent = gr.Slider(0, 30, value=2, step=1, label="保护最近 N 条消息 · 改动需重新评分", info="首条始终保护。工具调用或结果任一处于保护范围，整对都会保留。")
-                with gr.Accordion("更多控制", open=False):
-                    head = gr.Slider(0, 2000, value=300, step=50, label="被截断结果保留的开头字符数 · 本地重算", info="原库对短输出可能保留原文，决策表会如实说明。")
-                    goal = gr.Textbox(label="当前任务目标 · 改动需重新评分", placeholder="留空时使用最后三条用户提示", max_lines=3)
-                gr.Markdown("**数据发送提示：** 点击下面按钮会把当前对话的正文和工具输入发送至 TypeSafe，输出正文按原库规则省略。请先移除私人或敏感信息。调阈值和截断长度不会发送数据。")
-                run = gr.Button("真实 Jev 评分 · 调用 API", variant="primary")
-                status = gr.Markdown("样例已就绪。尚未评分；点击按钮开始。")
-                metrics = gr.HTML("")
-                with gr.Row():
-                    with gr.Column():
-                        gr.Markdown("### 原始对话 · 查看删减标记")
-                        before = gr.HTML(transcript_html(SAMPLES[0]["messages"]))
-                    with gr.Column():
-                        gr.Markdown("### 压缩后的实际上下文")
-                        after = gr.HTML(EMPTY)
-                gr.Markdown("绿色＝保留，黄色＝截断策略，红色＝删除。左侧可展开完整原文；右侧展示实际留下的内容。字符按原库 JavaScript UTF-16 长度统计正文、工具输入 JSON 和结果，不等同于 token 或费用。")
-                chart = gr.HTML("")
-                scores = gr.Dataframe(headers=SCORE_HEADERS, datatype="str", interactive=False, label="逐调用评分与决策", wrap=True)
-                gr.Markdown("不生成 Jev 未提供的理由。原库评分状态中的工具输出只有状态与长度，困难样例专门检验这一信息缺口。")
+        with gr.Tabs() as tabs:
+            with gr.Tab("① 上下文压缩实验", id="compression"):
+                with gr.Column(variant="panel", elem_classes="workspace-section"):
+                    gr.Markdown("### 01　准备对话")
+                    with gr.Row(equal_height=False):
+                        sample = gr.Dropdown([s["name"] for s in SAMPLES], value=SAMPLES[0]["name"], label="内置样例", scale=3)
+                        run = gr.Button("开始压缩", variant="primary", scale=1, min_width=160)
+                    gr.Markdown("使用手工教学样例，或导入自己的对话。开始压缩会调用真实 Jev API。", elem_classes="quiet-note")
+                    with gr.Accordion("导入或编辑对话", open=False):
+                        upload = gr.File(label="导入 UTF-8 JSON（最大 2 MB）", file_types=[".json"], type="filepath")
+                        raw = gr.Code(value=INITIAL, language="json", label="对话 JSON", lines=12)
+                        gr.Markdown('支持消息数组，或 `{ "name": "我的实验", "messages": [...], "checks": [...] }`。当前样例就是完整格式示例。编辑后需要重新压缩。')
+                        with gr.Accordion("格式说明", open=False):
+                            gr.Markdown("每条消息需要 `role`（user/assistant）、`text` 和 `toolUses`。工具调用包含 `tool_use_id`、`tool`、`input`；后续 `toolResults` 通过同一 ID 配对并提供 `text`。没有 `checks` 时只压缩，不生成验证成绩。验证题需要 `question`、`answer`、`evidence`；正文证据使用 `field: text` 和 `quote`，工具结果使用 `field: toolResults`、`tool_id` 和 `quote`。可选 `answer_groups` 用于答案要点匹配。")
+                    with gr.Accordion("高级设置", open=False):
+                        recent = gr.Slider(0, 30, value=2, step=1, label="保护最近消息数", info="首条始终保护；工具调用与结果成对保留。修改后需重新压缩。")
+                        head = gr.Slider(0, 2000, value=300, step=50, label="截断时保留开头字符数", info="修改后复用评分。短输出可能保持原文。")
+                        goal = gr.Textbox(label="当前任务目标", placeholder="留空时使用最后三条用户提示", info="修改后需重新压缩。", max_lines=3)
+                    gr.Markdown("发送至 TypeSafe：对话正文和工具输入，输出正文按原库规则省略。导入前请移除敏感信息。", elem_classes="quiet-note")
+                with gr.Column(variant="panel", elem_classes="workspace-section"):
+                    gr.Markdown("### 02　压缩结果")
+                    status = gr.Markdown("样例已就绪，点击「开始压缩」。")
+                    metrics = gr.HTML("")
+                    threshold = gr.Slider(0, 1, value=.5, step=.05, label="保留阈值", info="越高通常删得越多。首次压缩后，调整立即生效，不会再次调用 API。")
+                with gr.Column(variant="panel", elem_classes="workspace-section"):
+                    with gr.Row():
+                        gr.Markdown("### 03　内容对比", scale=3)
+                        next_step = gr.Button("下一步：验证关键信息 →", scale=1, min_width=230)
+                    gr.Markdown("同一编号对应同一条原始记录。绿色保留、黄色部分删减、红色删除；展开工具记录可查看评分与输出。", elem_classes="quiet-note")
+                    comparison = gr.HTML(comparison_html(SAMPLES[0]["messages"]))
+                    with gr.Accordion("如何理解评分？", open=False):
+                        gr.Markdown("Jev 为每次工具调用给出两项保留分数：调用本身、输出内容。分数达到阈值时保留；受保护的记录直接保留，不进行评分。分数不是正确率，界面不会生成 Jev 未提供的理由。原库评分时只能看到工具输出的状态和长度，这一限制可在困难样例中验证。")
 
-            with gr.Tab("② 关键信息验证"):
+            with gr.Tab("② 关键信息验证", id="verification"):
                 gr.Markdown("## 从‘文字还在’到‘真的答对’\n本页使用第一页**当前有效的实验结果**。修改输入或参数会清除旧结论。")
                 gr.Markdown("### A. 检查证据保留 · 本地运行\n检查每题对应的原文片段是否仍在指定正文或工具输出中。**不是完整任务成功率，也不等于模型理解。**")
                 check_button = gr.Button("检查证据保留 · 不调用 API", variant="primary")
@@ -198,9 +196,10 @@ def build_app():
                     csv_download = gr.File(label="下载 CSV 对比表", interactive=False)
                 gr.Markdown("导出包含参数、样本数、证据、分数、失败详情与真实回答（如启用），不包含服务端密钥。压缩耗时与回答耗时分开；本地基线不产生 API 请求。")
 
-        outputs = [state, status, metrics, before, after, chart, scores, verify_table, verify_status, qa_table, qa_status]
+        outputs = [state, status, metrics, comparison, verify_table, verify_status, qa_table, qa_status]
         inputs = [raw, threshold, recent, head, goal]
         shared = dict(concurrency_id="lab", concurrency_limit=1)
+        next_step.click(lambda: gr.Tabs(selected="verification"), outputs=tabs)
         sample.change(load_sample, sample, raw, **shared)
         upload.upload(import_file, upload, raw, **shared)
         raw.change(invalidate, [raw, recent, goal], outputs, **shared)

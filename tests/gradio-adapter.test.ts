@@ -26,6 +26,8 @@ describe('Gradio adapter (offline fixtures; no real API calls)', () => {
     expect(client.ask).toHaveBeenCalledTimes(1);
     expect(drop.stats.newRequests).toBe(0);
     expect(drop.stats.requests).toBe(1);
+    expect(drop.sourceIndices).toEqual([0, 3]);
+    expect(truncate.sourceIndices).toEqual([0, 1, 2, 3]);
   });
   it('invalidates cache on transcript, goal, protection or model changes', async () => {
     const cached = await score(messages, opts, 'test', asker());

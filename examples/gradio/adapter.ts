@@ -80,7 +80,9 @@ export function reapply(messages: Message[], options: CompactOptions, model: str
     return decideCall(c, answer, resolved);
   });
   const kept = applyDecisions(messages, decisions, calls, resolved.truncateHeadChars);
-  return { messages: kept, decisions, calls,
+  const sourceIndices = messages.flatMap((message, index) =>
+    applyDecisions([message], decisions, calls, resolved.truncateHeadChars).length ? [index] : []);
+  return { messages: kept, sourceIndices, decisions, calls,
     stats: { ...cache.result.stats, messagesAfter: kept.length,
       charsAfter: kept.reduce((n, m) => n + messageChars(m), 0),
       kept: decisions.filter(d => d.reason === 'kept').length,

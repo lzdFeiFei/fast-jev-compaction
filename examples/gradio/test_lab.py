@@ -7,7 +7,36 @@ import pytest
 
 sys.path.insert(0, str(Path(__file__).parent))
 import lab
+from presentation import comparison_html
 from samples import SAMPLES
+
+
+def test_aligned_comparison_preserves_indices_and_escapes_deleted_output():
+    original = [
+        {'role': 'user', 'text': 'same', 'toolUses': []},
+        {'role': 'assistant', 'text': '', 'toolUses': [{'tool_use_id': 'x', 'tool': 'Read', 'input': {}}]},
+        {'role': 'user', 'text': '', 'toolUses': [], 'toolResults': [{'tool_use_id': 'x', 'text': '<script>lost</script>'}]},
+        {'role': 'user', 'text': 'same', 'toolUses': []},
+    ]
+    result = {'sourceIndices': [0, 3], 'messages': [original[0], original[3]],
+              'calls': [{'tool_use_id': 'x'}], 'decisions': [{'action': 'drop_call', 'reason': 'call_dropped', 'keepCall': .1, 'keepResult': .2}]}
+    markup = comparison_html(original, result)
+    assert markup.count('class="compare-row') == 4
+    assert '#04' in markup
+    assert markup.count('已删除 ·') == 2
+    assert markup.count('查看评分') == 1
+    assert '<script>' not in markup
+    assert '&lt;script&gt;lost' in markup
+
+
+def test_comparison_marks_actual_short_output_as_kept():
+    original = [{'role': 'user', 'text': '', 'toolUses': [], 'toolResults': [{'tool_use_id': 'x', 'text': 'short'}]}]
+    result = {'sourceIndices': [0], 'messages': original, 'calls': [{'tool_use_id': 'x'}],
+              'decisions': [{'action': 'drop_result', 'reason': 'result_dropped', 'keepCall': .7, 'keepResult': .1}]}
+    markup = comparison_html(original, result)
+    assert 'compare-row retained' in markup
+    result['messages'] = [{**original[0], 'toolResults': [{'tool_use_id': 'x', 'text': 's [truncated]'}]}]
+    assert 'compare-row trimmed' in comparison_html(original, result)
 
 
 @pytest.mark.parametrize('case', SAMPLES, ids=[s['name'] for s in SAMPLES])

@@ -189,40 +189,7 @@ def transcript_html(messages, decisions=None, calls=None):
     return '<div class="transcript">' + ("".join(blocks) or '<p class="empty">此策略没有保留任何消息。</p>') + '</div>'
 
 
-EMPTY = '<div class="empty">尚未评分。选择样例，然后点击「真实 Jev 评分」。</div>'
-
-
-def render(state):
-    result = state["result"]
-    stats = result["stats"]
-    before, after = stats["charsBefore"], stats["charsAfter"]
-    ratio = 0 if before == 0 else (before-after)/before
-    cards = [("字符减少", f"{ratio:.1%}"), ("消息数", f"{stats['messagesBefore']} → {stats['messagesAfter']}"),
-             ("字符数", f"{before:,} → {after:,}"), ("评分实际耗时", f"{stats['ms']:,} ms"),
-             ("评分 API 请求", str(stats["requests"])), ("本次本地重算", f"{stats['localMs']:.1f} ms · 0 请求")]
-    metrics = '<div class="metrics">' + ''.join(f'<div><small>{label}</small><strong>{value}</strong></div>' for label,value in cards) + '</div>'
-    chart = '<div class="score-chart"><p>Jev 的保留分数（0–1）不是正确率。受保护项没有调用 API 评分。</p>'
-    rows = []
-    for call, d in zip(result["calls"], result["decisions"]):
-        pinned = d["reason"] == "pinned"
-        action = LABELS[d["action"]]
-        if d["action"] == "drop_result":
-            original = next(r["text"] for m in state["case"]["messages"] for r in m.get("toolResults", []) if r["tool_use_id"] == call["tool_use_id"])
-            kept = next(r["text"] for m in result["messages"] for r in m.get("toolResults", []) if r["tool_use_id"] == call["tool_use_id"])
-            action = "截断结果" if original != kept else "保留原文（输出较短）"
-        rows.append([d["id"], d["tool"], "受保护 / 未评分" if pinned else f"{d['keepCall']:.3f}",
-                     "受保护 / 未评分" if pinned else f"{d['keepResult']:.3f}", action, call["tool_use_id"]])
-        chart += f'<div class="score-row"><b>{esc(d["id"])} · {esc(d["tool"])}</b>'
-        if pinned:
-            chart += '<span>受保护 · 未评分</span>'
-        else:
-            for field,label in [("keepCall","调用"),("keepResult","结果")]:
-                v = max(0, min(1, d[field]))
-                chart += f'<div class="bar-row"><span>{label}</span><div class="track"><i style="width:{v*100:.2f}%"></i></div><span>{d[field]:.3f}</span></div>'
-        chart += '</div>'
-    chart += '</div>'
-    return (metrics, transcript_html(state["case"]["messages"], result["decisions"], result["calls"]),
-            transcript_html(result["messages"], result["decisions"], result["calls"]), chart, rows)
+EMPTY = '<div class="empty">尚未压缩。选择样例，然后点击「开始压缩」。</div>'
 
 
 def batch_evaluate(threshold, recent, head, with_answers=False, progress=None):
