@@ -176,6 +176,126 @@ TYPESAFE_API_KEY="$(cat ~/.typesafe_key)" npm run demo
 The unit tests use a fake Jev and never contact TypeSafe. The demo is the live
 network check.
 
+## 中文 Gradio 实验台（Windows / macOS / Linux）
+
+新增入口复用 `src/` 的评分、决策和压缩算法，不改动 Claude Code 插件或原网页。
+架构为 **Gradio / Python → 本地 Node 子进程（JSON 标准输入输出）→ 原 TypeScript 库**。
+不额外监听 Node API 端口；每次子进程从项目根目录 `.env` 读取密钥。
+
+### 安装、启动和停止
+
+需要 Node.js 22+、Python 3.11+。本地已验证 Node 24、Python 3.14、Gradio 6.28。
+在项目根目录执行（Windows PowerShell）：
+
+```powershell
+npm ci
+python -m venv .venv
+.venv\Scripts\python.exe -m pip install -r examples/gradio/requirements.txt
+# 也可以用 uv venv .venv，再用 uv pip install --python .venv/Scripts/python.exe -r examples/gradio/requirements.txt
+npm run demo:gradio
+```
+
+macOS / Linux 安装依赖使用 `.venv/bin/python -m pip install -r examples/gradio/requirements.txt`，
+启动同样使用 `npm run demo:gradio`。打开 **http://127.0.0.1:7860**。
+终端按 **Ctrl+C** 停止。端口被占用时先停止旧进程，或设置 `GRADIO_SERVER_PORT` 后启动。
+默认 `share=False`，只绑定本机，不公开分享或部署。原网页仍可使用 `npm run demo:web`（3000 端口）。
+
+`.env`（被 Git 忽略）至少需要：
+
+```dotenv
+TYPESAFE_API_KEY=你的TypeSafe密钥
+# 可选；不填写使用 jev-latest
+JEV_MODEL=jev-latest
+```
+
+### 三个页面
+
+1. **上下文压缩实验**：4 个手工教学样例（Bug 修复、资料检索、多轮需求修改、旧输出唯一线索）；
+   支持编辑/导入 JSON、逐调用评分图、原文与结果并排查看、保留/截断/删除标记。
+   左侧可展开被删的完整输出。首条和最近范围内的调用/结果成对保护，受保护项显示“未评分”。
+   同次评分可立即调整阈值及截断开头长度，完全复用分数，不产生新 API 调用。
+   修改对话、任务目标、保护范围或 Jev 模型会使缓存失效；旧验证结论会清空。
+2. **关键信息验证**：17 道题均有标准答案和可定位的证据。
+   A 检查指定正文或工具输出是否还包含证据原文，不调用 API；它不是语义完整性或任务成功率。
+   B 用同一个回答模型、相同提示词/温度 0/问题顺序，分别读取原始和压缩上下文，标准答案不发送给模型。
+   展示真实回答，并按题目声明的答案要点/别名做透明匹配；该初筛不能处理所有否定、矛盾或同义改写，须人工复核。
+3. **批量评测**：4 样例 × 3 策略。完整上下文不删减；最近记录只取最后 N 条，
+   去掉没有配对调用的孤立结果，不额外保护首条（N=0 为空）；Jev 使用原算法。
+   报告证据保留、字符减少、耗时、请求数、缺失题目及失败，支持 JSON / UTF-8 CSV 下载。
+   可选真实问答（通常 12 次回答请求）。API 失败单独列出，不计作答错或零压缩。
+
+### 导入格式
+
+支持项目 `Message[]`，或 `{ "name": "案例名称", "messages": [...], "checks": [...] }`。
+完整格式可查看页面中的内置样例。没有 `checks` 时可压缩，但不生成验证成绩。
+仅接受完整配对的调用/结果：结果位于调用之后，ID 唯一。最多 500 条消息、500,000 个
+JavaScript 字符的消息 JSON，上传文件最多 2 MB。无效字段、孤立结果、重复 ID 和找不到的证据会给出中文提示。
+
+```json
+{
+  "name": "最小示例",
+  "messages": [
+    {"role":"user","text":"禁止修改 legacy/。","toolUses":[]},
+    {"role":"assistant","text":"","toolUses":[{"tool_use_id":"c1","tool":"Read","input":{"file_path":"log.txt"}}]},
+    {"role":"user","text":"","toolUses":[],"toolResults":[{"tool_use_id":"c1","text":"错误 E42 尚未解决。"}]}
+  ],
+  "checks": [
+    {
+      "question":"未解决的错误是什么？",
+      "answer":"E42",
+      "evidence":{"field":"toolResults","tool_id":"c1","quote":"错误 E42 尚未解决。"},
+      "answer_groups":[["E42"]]
+    }
+  ]
+}
+```
+
+正文证据使用 `field: "text"`（无需 tool_id）。工具证据限定在对应 tool_id 的输出中。
+`answer_groups` 是必需答案要点的数组：每组任一别名匹配、全部组满足才记为要点匹配。
+不提供时使用标准答案整段文本；比较忽略大小写和空白。
+
+### 可选：回答模型
+
+在 `.env` 添加支持 Chat Completions 格式的接口，再点击页面“刷新配置状态”：
+
+```dotenv
+ANSWER_BASE_URL=https://your-provider.example/v1
+ANSWER_API_KEY=你的回答模型密钥
+ANSWER_MODEL=模型名称
+```
+
+基础地址不包含 `/chat/completions`，需支持 `temperature: 0` 和 JSON 文本回答。
+不自动重试或切换其他模型。无配置时证据核对仍可运行，模型问答显示未配置，绝不模拟答案。
+请求超时（45 秒）、认证、限流、接口错误、答案 JSON 无效都有明确失败状态；
+整个子进程操作超过 75 秒会终止。更改服务器配置后，已有评分可能需要重新获取。
+
+### 数据、指标与边界
+
+- “真实 Jev 评分”和批量评测会将正文及工具输入发往 TypeSafe；原库在评分状态中省略工具输出正文。
+  “真实问答”会把所选原始/压缩上下文连同工具输出发往配置的回答服务。导入前请自行移除敏感信息。
+- 只读 `.env` 中的密钥，密钥不进入 Gradio 状态、日志或导出。原始上游错误正文不会转发给页面。
+  Gradio 禁止下载 `.env`、`.git` 和 `.venv`。不用内置模拟评分；自动测试的替身仅用于离线测试。
+- 字符统计复用 `messageChars`：正文、工具输入 JSON、结果的 JavaScript UTF-16 长度。
+  字符减少比例不是 token 或费用节省；不显示未经验证的费用。评分耗时为原库整轮真实调用耗时，
+  不含 Gradio 排队/进程启动；本地重算和问答耗时分开显示。
+- “困难样例”将批次、队列、错误线索只放在旧工具输出末尾。测试确认这些内容不在发送给 Jev 的状态中。
+  一次随机评分可能保留或删除它，不能预先假定成功。证据是否缺失依实际结果报告。
+- 手工教学样例只有 4 个、17 道题，不代表真实任务分布；不声称通用任务成功率或普遍优于其他策略。
+- 当前会话评分存在服务器内存；页面刷新后需重新评分。批量结果保存在被 Git 忽略的
+  `artifacts/gradio/evaluation-*` 下，可能包含对话证据与回答，请按自己的数据保留要求管理。
+
+### 测试
+
+```powershell
+npm test
+npm run typecheck:gradio
+.venv\Scripts\python.exe -m pip install -r examples/gradio/requirements-dev.txt
+.venv\Scripts\python.exe -X utf8 -m pytest examples/gradio -q
+```
+
+测试覆盖分数复用、缓存失效、保护范围、截断导致证据丢失、最近记录的配对规则、
+JSON 导入、HTML 转义、缺配置、问题对照、失败记录与导出。自动测试不调用真实收费 API。
+
 ## Browser demo (Windows, macOS, Linux)
 
 Requires Node.js 22+ for the demo server (the library still supports Node.js 18+).

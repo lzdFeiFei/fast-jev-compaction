@@ -24,6 +24,8 @@
     "test": "vitest run",
     "demo": "tsx examples/demo.ts",
     "demo:web": "tsx examples/web/server.ts",
+    "demo:gradio": "node examples/gradio/start.mjs",
+    "typecheck:gradio": "tsc --noEmit --target ES2022 --module NodeNext --moduleResolution NodeNext --strict --skipLibCheck examples/gradio/bridge.ts",
     "typecheck:web": "tsc --noEmit --target ES2022 --module NodeNext --moduleResolution NodeNext --strict --skipLibCheck examples/web/server.ts",
     "typecheck:hooks": "tsc -p tsconfig.hooks.json",
     "validate:plugin": "claude plugin validate .claude-plugin/plugin.json"
