@@ -2,9 +2,11 @@
 import os
 os.environ.setdefault("GRADIO_ANALYTICS_ENABLED", "False")
 import json
+import re
 from pathlib import Path
 
 import gradio as gr
+import validation_view as vv
 from presentation import comparison_html, render_result, message_body, esc
 
 from samples import SAMPLES, get_sample
@@ -23,13 +25,11 @@ CSS = """
 .compare-row{margin:12px;border:1px solid #dce6df;border-radius:8px;overflow:hidden;background:white}.record-label{display:flex;justify-content:space-between;align-items:center;padding:8px 12px;font-size:12px;background:#f0f5f1}.badge{font-size:11px;border-radius:4px;padding:2px 7px;background:#e2f1e6;color:#275b3d}.deleted .badge{background:#fbe4e2;color:#943b36}.trimmed .badge{background:#fff0c9;color:#76560d}.pending .badge{background:#e9edf0;color:#55616a}
 .pair{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr)}.pair article{padding:12px;min-width:0}.pair article+article{border-left:1px solid #e0e8e2}.pair pre{white-space:pre-wrap;overflow-wrap:anywhere;font-size:12px;line-height:1.6;margin:8px 0;max-height:240px;overflow:auto}.pair .prose{white-space:pre-wrap;overflow-wrap:anywhere;line-height:1.7;font-size:14px;margin:0}.tool-title{font-weight:600;font-size:13px}.tool-title small{font-weight:400;color:#627469;margin-left:8px}.side-name{display:none}.muted,.removed{font-size:13px;color:#65766a;padding:8px 0}.removed{color:#8c4a43}.deleted .pair article:last-child{background:#fff7f6}.trimmed .pair article:last-child{background:#fffaf0}
 .inline-score,.output{font-size:12px;margin-top:10px}.inline-score summary,.output summary{cursor:pointer;color:#286649;font-weight:500;padding:4px 0}.inline-score p{font-size:12px}.bar-row{display:flex;align-items:center;gap:8px;font-size:12px;margin-top:8px}.bar-row meter{flex:1;min-width:30px;height:12px;accent-color:#277a53}.bar-row b{font-variant-numeric:tabular-nums;font-weight:400}.empty{padding:28px;color:#64776b;background:#f5f8f6;border-radius:8px;text-align:center}
-@media(max-width:700px){.result-summary{gap:16px;padding:16px}.result-summary strong{font-size:30px}.workspace-section{padding:12px!important}.pair{grid-template-columns:1fr}.pair article+article{border-left:0;border-top:1px dashed #dce6df}.side-name{display:block;font-size:11px;color:#667d6c;margin-bottom:8px}.compare-head{display:none}.comparison{max-height:620px}}
+.question-preview{font-size:14px;color:#294737}.question-preview summary{cursor:pointer}.question-preview li{margin:6px 0}.validation-metrics{display:grid;grid-template-columns:repeat(3,1fr);gap:12px}.validation-metrics>div{background:#edf7f0;border-radius:8px;padding:18px;color:#245137}.validation-metrics strong{display:block;font-size:30px;margin-top:6px}.validation-note{font-size:13px;color:#5a6c60}.question-card{border:1px solid #dce6df;border-radius:10px;overflow:hidden;margin-bottom:14px;color:#284433}.question-card.attention{border-color:#d5a35a}.question-standard{padding:12px;font-size:14px;line-height:1.8;overflow-wrap:anywhere}.question-standard span{font-size:12px;color:#647466}.evidence-detail{padding:12px;font-size:13px;background:#f7faf8}.evidence-detail summary{cursor:pointer}.evidence-detail blockquote{white-space:pre-wrap;overflow-wrap:anywhere;border-left:3px solid #a3bba9;padding-left:12px}.question-card .pair article small{display:block;margin-bottom:8px}.question-card .record-label b{overflow-wrap:anywhere}@media(max-width:700px){.validation-metrics{grid-template-columns:1fr}.result-summary{gap:16px;padding:16px}.result-summary strong{font-size:30px}.workspace-section{padding:12px!important}.pair{grid-template-columns:1fr}.pair article+article{border-left:0;border-top:1px dashed #dce6df}.side-name{display:block;font-size:11px;color:#667d6c;margin-bottom:8px}.compare-head{display:none}.comparison{max-height:620px}}
 """
 
 
 INITIAL = json.dumps(SAMPLES[0], ensure_ascii=False, indent=2)
-VERIFY_HEADERS = ["验证问题", "标准答案", "对应证据", "原始对话", "压缩后"]
-QA_HEADERS = ["问题", "标准答案", "原始上下文回答", "要点匹配", "压缩上下文回答", "要点匹配"]
 BATCH_HEADERS = ["样例", "策略", "证据保留", "字符减少", "压缩耗时 ms", "Jev 请求数", "问答要点匹配", "回答耗时 ms", "缺失 / 失败详情"]
 
 
@@ -78,6 +78,18 @@ def import_file(path):
         raise gr.Error(str(error)) from None
 
 
+def validation_preparation(state):
+    try:
+        return vv.preparation(state, bridge("config"))
+    except LabError as error:
+        return f'<div class="empty">{esc(error)}</div>'
+
+
+def reset_validation(state, message):
+    report = vv.build_report(state)
+    return report, vv.overview(report), vv.question_details(report), message, validation_preparation(state), "全部问题"
+
+
 def invalidate(raw, recent, goal):
     try:
         case = parse_input(raw)
@@ -86,46 +98,44 @@ def invalidate(raw, recent, goal):
     except LabError as error:
         preview = EMPTY
         text = f"输入无效：{error}"
-    return None, text, "", preview, [], "验证结果已清空；请先重新评分。", [], "问答结果已清空。"
+    return None, text, "", preview, *reset_validation(None, "输入已变更，请先重新压缩。")
 
 
 def scoring(raw, threshold, recent, head, goal):
     try:
         state = score_input(raw, threshold, recent, head, goal)
         status = "压缩完成。可调整下方阈值，立即查看删减变化，无需再次调用 API。"
-        return state, status, *render_result(state), [], "点击「检查证据保留」进行本地验证。", [], "尚未运行回答模型。"
+        return state, status, *render_result(state), *reset_validation(state, "原文已自动检查；可开始回答对比。")
     except LabError as error:
         # Clear previous results so a failed new run can never masquerade as success.
-        return None, f"评分失败：{error}", "", EMPTY, [], "评分未完成。", [], "尚未运行回答模型。"
+        return None, f"评分失败：{error}", "", EMPTY, *reset_validation(None, "压缩未完成。")
 
 
 def local_adjust(state, raw, threshold, recent, head, goal):
     try:
         updated = adjust(state, raw, threshold, recent, head, goal)
-        return updated, "已复用同一份评分，未调用 API；验证结论已清空。", *render_result(updated), [], "参数已调整，请重新检查证据。", [], "参数已调整，请重新运行问答。"
+        return updated, "已复用同一份评分，未调用 API；验证结论已清空。", *render_result(updated), *reset_validation(updated, "参数已调整，原文检查已更新；请重新运行回答对比。")
     except LabError as error:
         return invalidate(raw, recent, goal)
 
 
-def verify(state, raw, threshold, recent, head, goal):
+def validate_answers(state, raw, threshold, recent, head, goal, local_only, mode):
+    report = None
     try:
         state = adjust(state, raw, threshold, recent, head, goal)
-        case = state["case"]
-        if not case["checks"]:
-            return [], "此导入对话没有验证题。不会把没有题目的结果记为 100%。请使用内置样例或添加 checks。"
-        rows = verification(case, [case["messages"], state["result"]["messages"]])
-        retained = sum(row[-1] == "保留" for row in rows)
-        return rows, f"证据原文保留 {retained}/{len(rows)}。只核对指定位置的原文片段，不代表模型答对或 Agent 任务成功。缺失证据可能仍可被其他文字推断；本检查不判断推断。"
+        report = vv.build_report(state)
+        if not state["case"]["checks"]:
+            raise LabError("当前对话没有验证题，请添加 checks 或选择内置样例。")
+        if local_only:
+            note = "本地原文检查已完成，未调用回答模型。"
+        else:
+            rows, note = answer_comparison(state)
+            report = vv.build_report(state, rows, note)
+            timing = re.search(r'耗时 [\d.]+ 毫秒', note)
+            note = note.split('标准答案要点匹配')[0] + (timing.group(0) if timing else '')
+        return report, vv.overview(report), vv.question_details(report, mode), note
     except LabError as error:
-        return [], str(error)
-
-
-def qa(state, raw, threshold, recent, head, goal):
-    try:
-        state = adjust(state, raw, threshold, recent, head, goal)
-        return answer_comparison(state)
-    except LabError as error:
-        return [], str(error)
+        return report, vv.overview(report), vv.question_details(report, mode), f"回答对比未完成：{error}"
 
 
 def batch(threshold, recent, head, with_answers, progress=gr.Progress()):
@@ -180,20 +190,27 @@ def build_app():
                         gr.Markdown("Jev 为每次工具调用给出两项保留分数：调用本身、输出内容。分数达到阈值时保留；受保护的记录直接保留，不进行评分。分数不是正确率，界面不会生成 Jev 未提供的理由。原库评分时只能看到工具输出的状态和长度，这一限制可在困难样例中验证。")
                     next_step = gr.Button("下一步：验证关键信息 →")
 
-            with gr.Tab("② 关键信息验证", id="verification"):
-                gr.Markdown("## 从‘文字还在’到‘真的答对’\n本页使用第一页**当前有效的实验结果**。修改输入或参数会清除旧结论。")
-                gr.Markdown("### A. 检查证据保留 · 本地运行\n检查每题对应的原文片段是否仍在指定正文或工具输出中。**不是完整任务成功率，也不等于模型理解。**")
-                check_button = gr.Button("检查证据保留 · 不调用 API", variant="primary")
-                verify_status = gr.Markdown("请先在第一页运行评分。")
-                verify_table = gr.Dataframe(headers=VERIFY_HEADERS, datatype="str", interactive=False, wrap=True, label="问题、答案与原始证据")
-                gr.Markdown("### B. 相同回答模型对照 · 真实 API\n将原始和压缩后的**完整上下文（含工具输出）**分别发送给你配置的回答模型，回答同一组问题。标准答案与证据不会随题目发送给回答模型。")
-                qa_button = gr.Button("运行原始 / 压缩问答 · 调用回答模型 API")
-                qa_status = gr.Markdown("尚未运行。未配置回答模型时不会生成模拟答案或成绩。")
-                qa_table = gr.Dataframe(headers=QA_HEADERS, datatype="str", interactive=False, wrap=True, label="真实回答与标准答案要点匹配")
-                gr.Markdown("**判分范围：** 采用可查看的 `answer_groups` 要点匹配，同义词需在题目中列出。关键词可能出现于否定或错误叙述中，请人工复核实际回答。这里的匹配率只是问答正确性的初筛，不是通用能力评估。")
-                with gr.Accordion("回答模型配置说明", open=True):
-                    gr.Markdown("在项目根目录 `.env` 添加以下配置。需要支持 `/chat/completions` 的兼容接口。配置保留在服务器，不在界面填写密钥。基础地址以 `/v1` 等 API 根路径结尾，不要附加 `/chat/completions`。保存后点击顶部刷新。两种上下文使用相同模型、提示词、温度 0 和问题顺序。")
-                    gr.Code('ANSWER_BASE_URL=https://your-provider.example/v1\nANSWER_API_KEY=填写你的回答模型密钥\nANSWER_MODEL=填写模型名称', language="shell", interactive=False)
+            with gr.Tab("② 关键信息验证", id="verification") as verification_tab:
+                validation_report = gr.State(None)
+                with gr.Column(variant="panel", elem_classes="workspace-section"):
+                    gr.Markdown("### 01　验证准备")
+                    preparation = gr.HTML(validation_preparation(None))
+                    local_only = gr.Checkbox(value=False, label="仅检查关键原文，不调用回答模型")
+                    with gr.Accordion("回答模型配置", open=False):
+                        gr.Markdown("未配置时可先仅检查原文。真实回答对比需要在项目根目录 `.env` 设置以下项目；保存后点击顶部刷新连接状态，再进入本页。")
+                        gr.Code('ANSWER_BASE_URL=https://your-provider.example/v1\nANSWER_API_KEY=填写你的回答模型密钥\nANSWER_MODEL=填写模型名称', language="shell", interactive=False)
+                    gr.Markdown("开始回答对比会将原始和压缩后的完整对话（含工具输出）分别发送至配置的回答模型。使用相同模型和问题，标准答案不发送；通常产生 2 次真实 API 请求。", elem_classes="quiet-note")
+                    validate_button = gr.Button("开始回答对比", variant="primary")
+                with gr.Column(variant="panel", elem_classes="workspace-section"):
+                    gr.Markdown("### 02　验证概览")
+                    validation_status = gr.Markdown("请先完成压缩，关键原文会自动检查。")
+                    validation_summary = gr.HTML(vv.overview(None))
+                with gr.Column(variant="panel", elem_classes="workspace-section"):
+                    gr.Markdown("### 03　逐题对比")
+                    question_filter = gr.Radio(["全部问题", "只看需关注"], value="全部问题", label="显示范围", info="优先显示原始匹配而压缩后未匹配的题目；未匹配或证据缺失的题目均可筛选。")
+                    validation_details = gr.HTML(vv.question_details(None))
+                    with gr.Accordion("验证方法与结果边界", open=False):
+                        gr.Markdown("**原文检查**：在指定正文或工具输出中精确查找证据，自动本地运行。\n\n**回答对比**：同一模型分别读取两份上下文回答同一组问题，按标准答案要点匹配（忽略空白及大小写，使用题目声明的别名）。匹配无法排除否定、矛盾或同义改写造成的误判，请人工复核。\n\n原始匹配而压缩未匹配：疑似受压缩影响；两边均未匹配：暂不能归因；两边均匹配：仅表示已测问题未发现回答退化，不等于完全没有信息损失或任务成功。")
 
             with gr.Tab("③ 批量评测"):
                 gr.Markdown("## 同一批样例，三种保留策略\n**完整上下文：** 不删减，作为基线。\n\n**保留最近记录：** 只取最后 N 条，移除窗口内没有对应调用的孤立工具结果；不额外保护首条。N=0 时为空。\n\n**Jev 压缩：** 复用现有算法，首条和最近范围内的调用成对保护，其余使用真实评分。")
@@ -211,7 +228,7 @@ def build_app():
                     csv_download = gr.File(label="下载 CSV 对比表", interactive=False)
                 gr.Markdown("导出包含参数、样本数、证据、分数、失败详情与真实回答（如启用），不包含服务端密钥。压缩耗时与回答耗时分开；本地基线不产生 API 请求。")
 
-        outputs = [state, status, metrics, comparison, verify_table, verify_status, qa_table, qa_status]
+        outputs = [state, status, metrics, comparison, validation_report, validation_summary, validation_details, validation_status, preparation, question_filter]
         inputs = [raw, threshold, recent, head, goal]
         shared = dict(concurrency_id="lab", concurrency_limit=1)
         next_step.click(lambda: gr.Tabs(selected="verification"), outputs=tabs)
@@ -224,8 +241,11 @@ def build_app():
         run.click(scoring, inputs, outputs, **shared)
         threshold.change(local_adjust, [state, *inputs], outputs, **shared)
         head.change(local_adjust, [state, *inputs], outputs, **shared)
-        check_button.click(verify, [state, *inputs], [verify_table, verify_status], **shared)
-        qa_button.click(qa, [state, *inputs], [qa_table, qa_status], **shared)
+        verification_tab.select(validation_preparation, state, preparation, **shared)
+        local_only.change(lambda value: gr.Button(value="检查关键原文" if value else "开始回答对比"), local_only, validate_button)
+        validate_button.click(validate_answers, [state, *inputs, local_only, question_filter],
+                              [validation_report, validation_summary, validation_details, validation_status], **shared)
+        question_filter.change(vv.question_details, [validation_report, question_filter], validation_details, **shared)
         batch_button.click(batch, [batch_threshold, batch_recent, batch_head, include_qa],
                            [batch_table, batch_status, json_download, csv_download], **shared)
         for component in [batch_threshold, batch_recent, batch_head, include_qa]:
