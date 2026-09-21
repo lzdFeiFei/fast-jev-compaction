@@ -5,7 +5,7 @@ import json
 from pathlib import Path
 
 import gradio as gr
-from presentation import comparison_html, render_result
+from presentation import comparison_html, render_result, message_body, esc
 
 from samples import SAMPLES, get_sample
 from lab import (ROOT, LabError, bridge, parse_input, score_input, adjust, require_current,
@@ -18,7 +18,7 @@ CSS = """
 .app-heading {align-items:center!important;padding:8px 0 14px}.app-heading h1{font-size:26px!important}.app-heading p{margin:4px 0!important}.app-heading button{max-width:150px;align-self:flex-end}
 .workspace-section{padding:18px!important;border:1px solid #dce6df!important;border-radius:12px!important;background:white!important;margin:12px 0!important;gap:12px!important}
 .workspace-section .workspace-section{padding:0!important;border:0!important;margin:0!important}.workspace-section button.primary{align-self:flex-end!important;min-height:44px!important}.workspace-section h3{font-size:18px!important;color:#1b4938!important;margin:0!important}.quiet-note p{font-size:12px!important;color:#576c60!important;line-height:1.6!important;margin:0!important}
-.result-summary{display:flex;align-items:center;gap:32px;background:#edf7f0;color:#163c2b;padding:22px;border-radius:10px}.result-summary strong{display:block;font-size:40px;line-height:1.2;margin-top:6px}.result-summary small{color:#536d5d}.result-summary p{margin:8px 0;font-size:14px}.run-details{font-size:12px;color:#526759;margin-top:12px}.run-details summary{cursor:pointer}.run-details p{margin:8px 0}
+.input-summary{color:#254332;padding:4px 0 10px}.input-summary p{font-size:13px;margin:6px 0;line-height:1.6}.input-summary small{color:#617368;font-size:12px}.input-preview{max-height:300px;overflow:auto;background:#f7faf8;border:1px solid #dce6df;border-radius:8px;padding:12px;color:#243e30}.input-preview article{background:white;border:1px solid #e3eae5;border-radius:6px;padding:12px;margin-bottom:8px}.input-preview article>small{display:block;font-size:11px;color:#65786b;margin-bottom:6px}.input-preview .prose{white-space:pre-wrap;overflow-wrap:anywhere;line-height:1.7;font-size:13px;margin:0}.input-preview pre{white-space:pre-wrap;overflow-wrap:anywhere;font-size:12px;max-height:200px;overflow:auto}.input-preview:focus-visible{outline:2px solid #277a53;outline-offset:2px}.result-summary{display:flex;align-items:center;gap:32px;background:#edf7f0;color:#163c2b;padding:22px;border-radius:10px}.result-summary strong{display:block;font-size:40px;line-height:1.2;margin-top:6px}.result-summary small{color:#536d5d}.result-summary p{margin:8px 0;font-size:14px}.run-details{font-size:12px;color:#526759;margin-top:12px}.run-details summary{cursor:pointer}.run-details p{margin:8px 0}
 .comparison{max-height:680px;overflow:auto;border:1px solid #dce6df;border-radius:10px;background:#f7faf8;color:#223d2e}.compare-head{position:sticky;top:0;z-index:1;display:grid;grid-template-columns:1fr 1fr;background:#edf3ef;border-bottom:1px solid #ccd9d0;padding:12px 16px;font-size:14px}
 .compare-row{margin:12px;border:1px solid #dce6df;border-radius:8px;overflow:hidden;background:white}.record-label{display:flex;justify-content:space-between;align-items:center;padding:8px 12px;font-size:12px;background:#f0f5f1}.badge{font-size:11px;border-radius:4px;padding:2px 7px;background:#e2f1e6;color:#275b3d}.deleted .badge{background:#fbe4e2;color:#943b36}.trimmed .badge{background:#fff0c9;color:#76560d}.pending .badge{background:#e9edf0;color:#55616a}
 .pair{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr)}.pair article{padding:12px;min-width:0}.pair article+article{border-left:1px solid #e0e8e2}.pair pre{white-space:pre-wrap;overflow-wrap:anywhere;font-size:12px;line-height:1.6;margin:8px 0;max-height:240px;overflow:auto}.pair .prose{white-space:pre-wrap;overflow-wrap:anywhere;line-height:1.7;font-size:14px;margin:0}.tool-title{font-weight:600;font-size:13px}.tool-title small{font-weight:400;color:#627469;margin-left:8px}.side-name{display:none}.muted,.removed{font-size:13px;color:#65766a;padding:8px 0}.removed{color:#8c4a43}.deleted .pair article:last-child{background:#fff7f6}.trimmed .pair article:last-child{background:#fffaf0}
@@ -44,6 +44,23 @@ def configuration():
 
 def load_sample(name):
     return json.dumps(get_sample(name), ensure_ascii=False, indent=2)
+
+
+def input_preview(raw):
+    try:
+        case = parse_input(raw)
+        matched = next((s for s in SAMPLES if s['messages'] == case['messages']), None)
+        description = matched['description'] if matched else '当前导入或编辑的对话；以下内容将用于本次压缩。'
+        count = sum(len(m['toolUses']) for m in case['messages'])
+        heading = (f'<div class="input-summary"><b>{esc(case["name"])}</b><p>{esc(description)}</p>'
+                   f'<small>{len(case["messages"])} 条消息 · {count} 次工具调用 · {len(case["checks"])} 个验证问题</small></div>')
+        rows = []
+        for i, m in enumerate(case['messages']):
+            role = '工具输出' if m.get('toolResults') else '用户' if m['role'] == 'user' else '助手'
+            rows.append(f'<article><small>#{i+1:02d} · {role}</small>{message_body(m)}</article>')
+        return heading + '<div class="input-preview" role="region" aria-label="待压缩对话预览" tabindex="0">' + ''.join(rows) + '</div>'
+    except LabError as error:
+        return f'<div class="empty">无法预览：{esc(error)}</div>'
 
 
 def import_file(path):
@@ -136,10 +153,8 @@ def build_app():
             with gr.Tab("① 上下文压缩实验", id="compression"):
                 with gr.Column(variant="panel", elem_classes="workspace-section"):
                     gr.Markdown("### 01　准备对话")
-                    with gr.Row(equal_height=False):
-                        sample = gr.Dropdown([s["name"] for s in SAMPLES], value=SAMPLES[0]["name"], label="内置样例", scale=3)
-                        run = gr.Button("开始压缩", variant="primary", scale=1, min_width=160)
-                    gr.Markdown("使用手工教学样例，或导入自己的对话。开始压缩会调用真实 Jev API。", elem_classes="quiet-note")
+                    sample = gr.Dropdown([s["name"] for s in SAMPLES], value=SAMPLES[0]["name"], label="内置样例")
+                    preview = gr.HTML(input_preview(INITIAL))
                     with gr.Accordion("导入或编辑对话", open=False):
                         upload = gr.File(label="导入 UTF-8 JSON（最大 2 MB）", file_types=[".json"], type="filepath")
                         raw = gr.Code(value=INITIAL, language="json", label="对话 JSON", lines=12)
@@ -151,6 +166,7 @@ def build_app():
                         head = gr.Slider(0, 2000, value=300, step=50, label="截断时保留开头字符数", info="修改后复用评分。短输出可能保持原文。")
                         goal = gr.Textbox(label="当前任务目标", placeholder="留空时使用最后三条用户提示", info="修改后需重新压缩。", max_lines=3)
                     gr.Markdown("发送至 TypeSafe：对话正文和工具输入，输出正文按原库规则省略。导入前请移除敏感信息。", elem_classes="quiet-note")
+                    run = gr.Button("开始压缩", variant="primary")
                 with gr.Column(variant="panel", elem_classes="workspace-section"):
                     gr.Markdown("### 02　压缩结果")
                     status = gr.Markdown("样例已就绪，点击「开始压缩」。")
@@ -203,6 +219,7 @@ def build_app():
         sample.change(load_sample, sample, raw, **shared)
         upload.upload(import_file, upload, raw, **shared)
         raw.change(invalidate, [raw, recent, goal], outputs, **shared)
+        raw.change(input_preview, raw, preview, **shared)
         recent.change(invalidate, [raw, recent, goal], outputs, **shared)
         goal.change(invalidate, [raw, recent, goal], outputs, **shared)
         run.click(scoring, inputs, outputs, **shared)
