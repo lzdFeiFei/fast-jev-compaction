@@ -1,0 +1,77 @@
+<!doctype html>
+<html lang="zh-CN">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Jev · 上下文压缩实验室</title>
+<style>
+:root{color-scheme:dark;font-family:Inter,"Segoe UI","Microsoft YaHei",sans-serif;background:#101313;color:#e5ebe5}*{box-sizing:border-box}body{margin:0}main{max-width:1440px;margin:auto;padding:32px 40px}header{display:flex;justify-content:space-between;align-items:center;border-bottom:1px solid #303936;padding-bottom:24px}.brand{font-size:24px;font-weight:750;letter-spacing:-1px}.brand span{color:#b7ec80}.tag{font-size:12px;color:#b8c7bf;border:1px solid #3d4c43;border-radius:20px;padding:7px 12px}.intro{margin:40px 0 28px}.eyebrow{font-size:11px;letter-spacing:3px;color:#b7ec80}h1{font-size:clamp(26px,4vw,44px);font-weight:550;letter-spacing:-1px;margin:12px 0}p{color:#a3afa7;line-height:1.7;font-size:14px}.controls{display:flex;gap:26px;align-items:end;flex-wrap:wrap;background:#1b211e;border:1px solid #303c34;padding:22px;border-radius:12px}label{font-size:13px;display:grid;gap:10px}input{accent-color:#b7ec80}input[type=number]{background:#101713;border:1px solid #465146;color:inherit;border-radius:6px;padding:8px;width:100px}button{border:0;border-radius:7px;background:#b7ec80;color:#1b2917;padding:12px 24px;font:inherit;font-weight:650;cursor:pointer}button:disabled{opacity:.45;cursor:wait}.secondary{background:transparent;color:#c9d5cc;border:1px solid #465146}button:focus-visible,input:focus-visible,summary:focus-visible{outline:2px solid #b7ec80;outline-offset:4px}#status{min-height:26px;margin:12px 0 22px}.metrics{display:grid;grid-template-columns:repeat(4,1fr);gap:14px}.metric{border-top:1px solid #3c493f;padding:18px 0}.metric small{color:#9eada2}.metric strong{display:block;margin-top:10px;font-size:30px;font-weight:500}.columns{display:grid;grid-template-columns:1fr 1fr;gap:22px;margin-top:22px}.panel{min-width:0;border:1px solid #303c34;border-radius:10px;background:#161b18;overflow:hidden}.panel h2{font-size:14px;font-weight:550;padding:18px 20px;margin:0;border-bottom:1px solid #303c34;display:flex;justify-content:space-between}.count{color:#a6b5aa}.history{height:530px;overflow:auto;padding:16px;scrollbar-color:#475849 transparent}.message{padding:13px 14px;border-left:2px solid #475849;background:#202722;margin-bottom:10px;border-radius:3px;animation:appear .3s ease}.message.user{border-left-color:#b7ec80}.role{font-size:10px;letter-spacing:1px;color:#afc0b3;margin-bottom:8px}.message p{margin:0;color:#e0e8e1;font-size:12px;white-space:pre-wrap}.tool{border-left-color:#8091ba}pre{white-space:pre-wrap;overflow-wrap:anywhere;font-size:11px;line-height:1.6;color:#a8b8ac;margin:8px 0 0}summary{cursor:pointer;font-size:12px}.empty{display:grid;place-content:center;height:100%;text-align:center;color:#7d9383}.empty strong{font-size:25px;color:#b7ec80;font-weight:400}.decisions{margin-top:26px;overflow:auto}table{width:100%;border-collapse:collapse;font-size:13px;white-space:nowrap}th,td{text-align:left;padding:15px 20px;border-bottom:1px solid #303c34}th{color:#91a498;font-weight:400}.pill{display:inline-block;padding:4px 9px;border-radius:4px;font-size:11px}.drop_call{background:#402c2c;color:#f4a5a0}.keep{background:#293d29;color:#b7ec80}.drop_result{background:#413a25;color:#e8d28d}footer{margin-top:24px;color:#7e9084;font-size:12px;line-height:1.8}@keyframes appear{from{opacity:0;transform:translateY(5px)}to{opacity:1;transform:none}}@media(max-width:760px){main{padding:20px}.columns{grid-template-columns:1fr}.metrics{grid-template-columns:1fr 1fr}.history{height:400px}h1{font-size:28px}.controls{gap:18px}}@media(prefers-reduced-motion:reduce){*{animation:none!important}}
+</style>
+<main>
+<header><div class="brand">jev<span> / </span>lab</div><span class="tag">LIVE API · 本地演示</span></header>
+<section class="intro"><div class="eyebrow">CONTEXT COMPACTION</div><h1>让上下文留下有用的部分。</h1><p>用一段修复解析器的示例对话，观察 Jev 如何判断工具调用的价值。保留的内容维持原文，不生成摘要。</p></section>
+<section class="controls" aria-label="压缩配置">
+<label>保留阈值 <output id="thresholdValue">0.50</output><input id="threshold" type="range" min="0" max="1" step="0.05" value="0.5"></label>
+<label>保护最近消息数<input id="recent" type="number" min="0" max="21" value="2"></label>
+<button id="run" disabled>开始真实压缩 ↗</button><button id="reset" class="secondary">重置</button>
+</section>
+<p id="status" role="status" aria-live="polite">正在加载示例…</p>
+<section class="metrics" aria-label="压缩统计"><div class="metric"><small>字符减少</small><strong id="saved">—</strong></div><div class="metric"><small>消息数</small><strong id="total">—</strong></div><div class="metric"><small>删除工具调用</small><strong id="dropped">—</strong></div><div class="metric"><small>API 耗时</small><strong id="time">—</strong></div></section>
+<section class="columns"><div class="panel"><h2>01 / 压缩前 <span class="count" id="beforeCount"></span></h2><div class="history" id="before"></div></div><div class="panel"><h2>02 / 压缩后 <span class="count" id="afterCount">等待运行</span></h2><div class="history" id="after"><div class="empty"><strong>Less noise. Same words.</strong><p>运行后在这里查看保留下来的原始消息。</p></div></div></div></section>
+<section class="panel decisions"><h2>03 / 工具调用决策 <span class="count">概率评分 · 0–100%</span></h2><table><thead><tr><th>调用</th><th>工具</th><th>保留调用</th><th>保留结果</th><th>最终动作</th></tr></thead><tbody id="decisions"><tr><td colspan="5">等待 Jev 评分</td></tr></tbody></table></section>
+<footer>每次运行会向 TypeSafe 发送这段预设示例并调用真实 API，可能消耗额度。密钥仅在本地服务端读取。<br>阈值越高，通常删减越多；首条消息与受保护的最近消息不会被删除。字符减少比例不等同于 token 节省比例。</footer>
+</main>
+<script type="module">
+const $ = id => document.getElementById(id);
+let source = [], configured = false;
+const empty = $('after').innerHTML;
+const labels = { keep:'完整保留', drop_call:'删除调用及结果', drop_result:'截短结果' };
+function node(tag, text, className) { const el = document.createElement(tag); el.textContent = text; if(className) el.className=className; return el; }
+function history(target, messages) {
+  $(target).replaceChildren();
+  for(const m of messages) {
+    const card = node('article','',`message ${m.role}`);
+    card.append(node('div',m.toolResults?.length?'TOOL RESULT':m.role.toUpperCase(),'role'));
+    if(m.text) card.append(node('p',m.text));
+    for(const t of m.toolUses) { card.classList.add('tool'); card.append(node('div',t.tool),node('pre',JSON.stringify(t.input,null,2))); }
+    for(const r of m.toolResults ?? []) { const d=node('details',''); d.append(node('summary',`${r.isError?'错误':'输出'} · ${r.text.length.toLocaleString()} 字符`),node('pre',r.text)); card.append(d); }
+    $(target).append(card);
+  }
+}
+$('threshold').oninput=()=>{$('thresholdValue').value=Number($('threshold').value).toFixed(2);};
+$('reset').onclick=()=>{
+  $('after').innerHTML=empty; $('afterCount').textContent='等待运行';
+  for(const id of ['saved','total','dropped','time']) $(id).textContent='—';
+  $('decisions').replaceChildren(); const row=node('tr',''), cell=node('td','等待 Jev 评分'); cell.colSpan=5; row.append(cell); $('decisions').append(row);
+  $('status').textContent=configured?'已重置，可以重新运行。':'未检测到密钥，请配置 .env 并重启服务。';
+};
+$('run').onclick=async()=>{
+  if(!$('recent').reportValidity()) return;
+  for(const id of ['run','reset','threshold','recent']) $(id).disabled=true;
+  $('run').textContent='正在压缩…'; $('status').textContent='正在请求 Jev，为工具调用及结果评分…';
+  try {
+    const response=await fetch('/api/compact',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({keepThreshold:Number($('threshold').value),preserveRecentMessages:Number($('recent').value)})});
+    const data=await response.json(); if(!response.ok) throw new Error(data.error);
+    history('after',data.messages); $('after').scrollTop=0;
+    $('afterCount').textContent=`${data.messages.length} 条消息`;
+    $('saved').textContent=`${(data.reduction*100).toFixed(1)}%`;
+    $('total').textContent=`${data.stats.messagesBefore} → ${data.stats.messagesAfter}`;
+    $('dropped').textContent=`${data.stats.callsDropped} / ${data.stats.calls}`;
+    $('time').textContent=`${data.stats.ms} ms`;
+    $('decisions').replaceChildren();
+    for(const d of data.decisions) {
+      const row=node('tr',''); for(const value of [d.id,d.tool,d.reason==='pinned'?'受保护':`${(d.keepCall*100).toFixed(0)}%`,d.reason==='pinned'?'受保护':`${(d.keepResult*100).toFixed(0)}%`]) row.append(node('td',value));
+      const cell=node('td',''); cell.append(node('span',labels[d.action],`pill ${d.action}`)); row.append(cell); $('decisions').append(row);
+    }
+    $('status').textContent=`压缩完成 · ${data.stats.requests} 次请求 · ${data.stats.charsBefore.toLocaleString()} → ${data.stats.charsAfter.toLocaleString()} 字符。当前结果对应本次提交的参数。`;
+  } catch(error) { $('status').textContent=`运行失败：${error.message} 可点击按钮重试。`; }
+  finally { for(const id of ['run','reset','threshold','recent']) $(id).disabled=false; $('run').textContent='再次真实压缩 ↗'; }
+};
+try {
+  const response=await fetch('/api/demo'); if(!response.ok) throw new Error('无法读取示例');
+  const data=await response.json(); source=data.messages; configured=data.configured;
+  history('before',source); $('beforeCount').textContent=`${source.length} 条消息`; $('recent').max=source.length;
+  $('run').disabled=!configured;
+  $('status').textContent=configured?'密钥已就绪。点击开始，查看真实压缩结果。':'未检测到密钥，请在 .env 配置 TYPESAFE_API_KEY 并重启服务。';
+} catch { $('status').textContent='示例加载失败，请确认本地服务正常运行后刷新。'; }
+</script>
+</html>

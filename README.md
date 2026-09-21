@@ -176,6 +176,29 @@ TYPESAFE_API_KEY="$(cat ~/.typesafe_key)" npm run demo
 The unit tests use a fake Jev and never contact TypeSafe. The demo is the live
 network check.
 
+## Browser demo (Windows, macOS, Linux)
+
+Requires Node.js 22+ for the demo server (the library still supports Node.js 18+).
+Create a `.env` file in the repository root with `TYPESAFE_API_KEY=your-key`, then:
+
+```sh
+npm ci
+npm run demo:web
+```
+
+Open http://127.0.0.1:3000. The Chinese-language page compares the original
+sample transcript with Jev's compacted output, shows each tool's keep scores,
+and lets you adjust the threshold and number of protected recent messages.
+Each click makes a real TypeSafe request and may consume API credits. The API
+key stays on the server; only the bundled sample transcript is submitted.
+The server binds to loopback only and reads `.env` automatically. Restart it
+after changing the key. Set `PORT` before launching to use a different port.
+Stop the server with Ctrl+C.
+
+The terminal and browser demos share `examples/transcript.ts`. Run
+`npm run typecheck:web` to check the demo server. Missing credentials, invalid
+options, request failures and timeouts are reported without exposing the key.
+
 ## Animated demo (macOS)
 
 `demo/JevDemo` is a small native SwiftUI app that plays a scripted, dramatized
