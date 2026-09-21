@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from 'vitest';
-import { validateMessages, optionsFrom, score, reapply, recentOnly } from '../examples/gradio/adapter.js';
+import { validateMessages, optionsFrom, score, reapply } from '../examples/gradio/adapter.js';
 import { fitState, collectToolCalls, resolveOptions, type Message, type JevAsker } from '../src/index.js';
 
 const messages: Message[] = [
@@ -48,11 +48,6 @@ describe('Gradio adapter (offline fixtures; no real API calls)', () => {
     const fitted = fitState(messages, collectToolCalls(messages, 1), resolveOptions(opts));
     expect(JSON.stringify(fitted.state)).not.toContain('ONLY_CLUE_731');
     expect(JSON.stringify(fitted.state)).toContain('omitted');
-  });
-  it('recent baseline handles zero and removes orphan results', () => {
-    expect(recentOnly(messages, 0)).toEqual([]);
-    expect(recentOnly(messages, 2).map(m => m.text)).toEqual(['Use the old recovery information.']);
-    expect(recentOnly(messages, 3)).toHaveLength(3);
   });
   it('rejects malformed schemas, duplicate IDs and orphan tool results', () => {
     expect(() => validateMessages([])).toThrow('1–500');

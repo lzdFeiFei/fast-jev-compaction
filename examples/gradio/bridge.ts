@@ -1,7 +1,7 @@
 import { existsSync } from 'node:fs';
 import { loadEnvFile } from 'node:process';
-import { JevClient, messageChars } from '../../src/index.js';
-import { validateMessages, optionsFrom, score, reapply, recentOnly } from './adapter.js';
+import { JevClient } from '../../src/index.js';
+import { validateMessages, optionsFrom, score, reapply } from './adapter.js';
 
 const env = new URL('../../.env', import.meta.url);
 if (existsSync(env)) loadEnvFile(env);
@@ -25,12 +25,6 @@ async function run(data: any) {
   const messages = data.command === 'answer' && Array.isArray(data.messages) && data.messages.length === 0 ? [] : validateMessages(data.messages);
   const options = optionsFrom(data.options);
   if (data.command === 'validate') return { messages };
-  if (data.command === 'recent') {
-    const start = performance.now();
-    const kept = recentOnly(messages, options.preserveRecentMessages!);
-    return { messages: kept, ms: performance.now() - start,
-      charsBefore: messages.reduce((n,m) => n + messageChars(m), 0), charsAfter: kept.reduce((n,m) => n + messageChars(m), 0) };
-  }
   if (data.command === 'reapply') return reapply(messages, options, model, data.cache);
   if (data.command === 'score') {
     if (!process.env.TYPESAFE_API_KEY) throw new PublicError('未配置 TYPESAFE_API_KEY。请修改项目根目录 .env。');

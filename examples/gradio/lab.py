@@ -2,7 +2,6 @@
 from __future__ import annotations
 
 import copy
-import csv
 import hashlib
 import html
 import json
@@ -11,14 +10,9 @@ from pathlib import Path
 import re
 import shutil
 import subprocess
-import tempfile
-import time
-from datetime import datetime, timezone
 
-from samples import SAMPLES
 
 ROOT = Path(__file__).resolve().parents[2]
-EXPORTS = ROOT / "artifacts" / "gradio"
 
 
 class LabError(Exception):
@@ -190,71 +184,3 @@ def transcript_html(messages, decisions=None, calls=None):
 
 
 EMPTY = '<div class="empty">尚未压缩。选择样例，然后点击「开始压缩」。</div>'
-
-
-def batch_evaluate(threshold, recent, head, with_answers=False, progress=None):
-    config = bridge("config")
-    if with_answers and not config["answer"]:
-        raise LabError("回答模型尚未配置，请先取消「加入真实问答」或完成 ANSWER_* 配置。")
-    records, table = [], []
-    opts = options(threshold, recent, head)
-    for index, case in enumerate(SAMPLES):
-        if progress:
-            progress(index / len(SAMPLES), desc=f"样例 {index+1}/{len(SAMPLES)}：{case['name']}")
-        base = bridge("recent", messages=case["messages"], options=opts)
-        variants = [("完整上下文", case["messages"], base["charsBefore"], 0, 0, None),
-                    ("保留最近记录", base["messages"], base["charsAfter"], base["ms"], 0, None)]
-        try:
-            cached = bridge("score", messages=case["messages"], options=opts)
-            result = bridge("reapply", messages=case["messages"], options=opts, cache=cached)
-            stats = result["stats"]
-            variants.append(("Jev 压缩", result["messages"], stats["charsAfter"], stats["ms"], stats["requests"], cached))
-        except LabError as error:
-            records.append({"sample": case["name"], "strategy": "Jev 压缩", "status": "失败", "error": str(error)})
-            table.append([case["name"], "Jev 压缩", "失败", "—", "—", "—", "未完成", "—", str(error)])
-        for strategy, kept, chars, elapsed, requests, cached in variants:
-            present = [evidence_present(kept, c["evidence"]) for c in case["checks"]]
-            failures = [c["question"] for c, yes in zip(case["checks"], present) if not yes]
-            ratio = 0 if base["charsBefore"] == 0 else 1-chars/base["charsBefore"]
-            record = {"sample": case["name"], "strategy": strategy, "status": "完成", "checks": case["checks"],
-                      "evidence_present": present, "missing_questions": failures, "chars_before": base["charsBefore"],
-                      "chars_after": chars, "character_reduction": ratio, "compression_ms": elapsed,
-                      "jev_requests": requests, "answer": None,
-                      "scored_at": cached["scoredAt"] if cached else None,
-                      "scores": cached["result"]["decisions"] if cached else None}
-            qa_text = "未运行"
-            if with_answers:
-                try:
-                    qa = ask_variant(case, kept)
-                    if qa["model"] != config["answerModel"]:
-                        raise LabError("回答模型配置在评测期间改变，本行无效。")
-                    record["answer"] = qa
-                    qa_text = f"{sum(qa['matched'])}/{len(present)}"
-                except LabError as error:
-                    record["answer_error"] = str(error)
-                    qa_text = "请求失败"
-            records.append(record)
-            table.append([case["name"], strategy, f"{sum(present)}/{len(present)}", f"{ratio:.1%}",
-                          f"{elapsed:.1f}", str(requests), qa_text,
-                          f"{record['answer']['ms']:.0f}" if record["answer"] else "—",
-                          "；".join(failures) or record.get("answer_error", "无证据缺失")])
-    report = {"created_at": datetime.now(timezone.utc).isoformat(), "sample_count": len(SAMPLES),
-              "question_count": sum(len(c["checks"]) for c in SAMPLES), "options": opts,
-              "jev_model": config["jevModel"], "answer_model": config["answerModel"] if with_answers else None,
-              "method": "证据原文在指定正文/工具输出中精确包含；问答为标准答案要点匹配，须人工复核。非任务成功率。",
-              "recent_rule": "仅保留最后 N 条消息，移除对应调用不在窗口内的孤立工具结果，不额外保护首条。N=0 为空。",
-              "records": records}
-    return table, report
-
-
-def export_report(report, table):
-    EXPORTS.mkdir(parents=True, exist_ok=True)
-    folder = Path(tempfile.mkdtemp(prefix="evaluation-", dir=EXPORTS))
-    json_path, csv_path = folder / "results.json", folder / "results.csv"
-    json_path.write_text(json.dumps(report, ensure_ascii=False, indent=2), encoding="utf-8")
-    with csv_path.open("w", encoding="utf-8-sig", newline="") as stream:
-        writer = csv.writer(stream)
-        writer.writerow(["样例", "策略", "证据保留", "字符减少", "压缩耗时ms", "Jev请求", "问答要点匹配", "回答耗时ms", "缺失/失败"])
-        # Prevent spreadsheet formula execution if any model/provider text starts with a formula.
-        writer.writerows([["'"+str(v) if str(v).startswith(("=", "+", "-", "@")) else v for v in row] for row in table])
-    return str(json_path), str(csv_path)

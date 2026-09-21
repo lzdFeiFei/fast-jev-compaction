@@ -108,23 +108,3 @@ def test_same_questions_no_reference_answers_sent(monkeypatch):
     assert set(sent[0]) == {'messages', 'questions'}
     assert sent[0]['messages'] != sent[1]['messages']
     assert len(rows) == 4
-
-
-def test_batch_records_api_failures_and_exports(monkeypatch, tmp_path):
-    real_bridge = lab.bridge
-    def fake(command, **kwargs):
-        if command == 'config':
-            return {'answer': False, 'jevModel': 'test', 'answerModel': ''}
-        if command == 'score':
-            raise lab.LabError('API 限流')
-        return real_bridge(command, **kwargs)
-    monkeypatch.setattr(lab, 'bridge', fake)
-    monkeypatch.setattr(lab, 'EXPORTS', tmp_path)
-    table, report = lab.batch_evaluate(.5, 2, 300)
-    assert len(table) == 12
-    assert sum(r['status'] == '失败' for r in report['records']) == 4
-    assert report['sample_count'] == 4
-    assert report['question_count'] == 17
-    json_file, csv_file = lab.export_report(report, table)
-    assert json.loads(Path(json_file).read_text(encoding='utf-8'))['sample_count'] == 4
-    assert 'API 限流' in Path(csv_file).read_text(encoding='utf-8-sig')

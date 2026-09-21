@@ -91,11 +91,3 @@ export function reapply(messages: Message[], options: CompactOptions, model: str
       localMs: performance.now() - started, newRequests: 0 },
     scoredAt: cache.scoredAt, model };
 }
-
-export function recentOnly(messages: Message[], count: number): Message[] {
-  if (count === 0) return [];
-  const selected = messages.slice(-count);
-  const ids = new Set(selected.flatMap(m => m.toolUses.map(t => t.tool_use_id)));
-  return selected.map(m => ({ ...m, toolResults: (m.toolResults ?? []).filter(r => ids.has(r.tool_use_id)) }))
-    .filter(m => m.text || m.toolUses.length || m.toolResults.length);
-}

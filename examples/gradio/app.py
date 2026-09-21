@@ -12,7 +12,7 @@ from presentation import comparison_html, render_result, message_body, esc
 from samples import SAMPLES, get_sample
 from lab import (ROOT, LabError, bridge, parse_input, score_input, adjust, require_current,
                  verification, answer_comparison,
-                 batch_evaluate, export_report, EMPTY)
+                 EMPTY)
 
 
 CSS = """
@@ -30,7 +30,6 @@ CSS = """
 
 
 INITIAL = json.dumps(SAMPLES[0], ensure_ascii=False, indent=2)
-BATCH_HEADERS = ["样例", "策略", "证据保留", "字符减少", "压缩耗时 ms", "Jev 请求数", "问答要点匹配", "回答耗时 ms", "缺失 / 失败详情"]
 
 
 def configuration():
@@ -138,18 +137,6 @@ def validate_answers(state, raw, threshold, recent, head, goal, local_only, mode
         return report, vv.overview(report), vv.question_details(report, mode), f"回答对比未完成：{error}"
 
 
-def batch(threshold, recent, head, with_answers, progress=gr.Progress()):
-    try:
-        table, report = batch_evaluate(threshold, recent, head, with_answers, progress)
-        files = export_report(report, table)
-        failures = sum(r["status"] == "失败" for r in report["records"])
-        status = (f"完成 {report['sample_count']} 个手工教学样例、{report['question_count']} 道验证题 × 3 种策略；"
-                  f"Jev 失败 {failures} 项。失败项保留在表中，不计为零压缩或答错。小样本仅供观察，不代表通用能力。")
-        return table, status, *files
-    except LabError as error:
-        return [], f"评测未完成：{error}", None, None
-
-
 def build_app():
     with gr.Blocks(title="Jev 中文实验台", analytics_enabled=False, delete_cache=(3600, 86400)) as app:
         with gr.Row(elem_classes="app-heading"):
@@ -212,22 +199,6 @@ def build_app():
                     with gr.Accordion("验证方法与结果边界", open=False):
                         gr.Markdown("**原文检查**：在指定正文或工具输出中精确查找证据，自动本地运行。\n\n**回答对比**：同一模型分别读取两份上下文回答同一组问题，按标准答案要点匹配（忽略空白及大小写，使用题目声明的别名）。匹配无法排除否定、矛盾或同义改写造成的误判，请人工复核。\n\n原始匹配而压缩未匹配：疑似受压缩影响；两边均未匹配：暂不能归因；两边均匹配：仅表示已测问题未发现回答退化，不等于完全没有信息损失或任务成功。")
 
-            with gr.Tab("③ 批量评测"):
-                gr.Markdown("## 同一批样例，三种保留策略\n**完整上下文：** 不删减，作为基线。\n\n**保留最近记录：** 只取最后 N 条，移除窗口内没有对应调用的孤立工具结果；不额外保护首条。N=0 时为空。\n\n**Jev 压缩：** 复用现有算法，首条和最近范围内的调用成对保护，其余使用真实评分。")
-                with gr.Row():
-                    batch_threshold = gr.Slider(0, 1, value=.5, step=.05, label="批量保留阈值")
-                    batch_recent = gr.Slider(0, 30, value=2, step=1, label="最近 N 条（两种压缩策略共用）")
-                    batch_head = gr.Slider(0, 2000, value=300, step=50, label="截断保留字符数")
-                include_qa = gr.Checkbox(value=False, label="加入真实问答对照（需要回答模型；每样例每策略各 1 次请求）")
-                gr.Markdown("按钮会为 **4 个内置教学样例、17 道验证题**运行三策略评测。Jev 为真实 API；勾选问答后，还会发送每种策略的完整上下文至回答模型（通常共 12 次回答请求）。费用不作估算。")
-                batch_button = gr.Button("一键评测内置样例 · 调用真实 API", variant="primary")
-                batch_status = gr.Markdown("尚未运行。小样本仅用于发现具体信息丢失案例，不作超出数据的能力结论。")
-                batch_table = gr.Dataframe(headers=BATCH_HEADERS, datatype="str", interactive=False, wrap=True, label="批量结果 · 失败不会隐藏")
-                with gr.Row():
-                    json_download = gr.File(label="下载完整 JSON 结果", interactive=False)
-                    csv_download = gr.File(label="下载 CSV 对比表", interactive=False)
-                gr.Markdown("导出包含参数、样本数、证据、分数、失败详情与真实回答（如启用），不包含服务端密钥。压缩耗时与回答耗时分开；本地基线不产生 API 请求。")
-
         outputs = [state, status, metrics, comparison, validation_report, validation_summary, validation_details, validation_status, preparation, question_filter]
         inputs = [raw, threshold, recent, head, goal]
         shared = dict(concurrency_id="lab", concurrency_limit=1)
@@ -246,11 +217,6 @@ def build_app():
         validate_button.click(validate_answers, [state, *inputs, local_only, question_filter],
                               [validation_report, validation_summary, validation_details, validation_status], **shared)
         question_filter.change(vv.question_details, [validation_report, question_filter], validation_details, **shared)
-        batch_button.click(batch, [batch_threshold, batch_recent, batch_head, include_qa],
-                           [batch_table, batch_status, json_download, csv_download], **shared)
-        for component in [batch_threshold, batch_recent, batch_head, include_qa]:
-            component.change(lambda: ([], "批量参数已改变，请重新评测。旧导出入口已清空。", None, None),
-                             outputs=[batch_table, batch_status, json_download, csv_download], **shared)
     return app
 
 
