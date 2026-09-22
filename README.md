@@ -1,5 +1,7 @@
 # fast-jev-compaction
 
+中文演示案例：[Jev 上下文压缩实验台：启动与使用](examples/gradio/README.md)。
+
 Claude Code plugin that replaces the compaction summary with Jev decisions:
 every tool call and result is scored in one fast request, stale ones are
 dropped or truncated, everything kept stays verbatim. Also usable as an npm
